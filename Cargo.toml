@@ -1,0 +1,23 @@
+[package]
+name = "splotrs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Dene Hoffman"]
+description = "Dependency-light sPlot fits backed by Rust and Ganesh"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/denehoffman/splotrs"
+documentation = "https://docs.rs/splotrs"
+keywords = ["statistics", "splot", "fitting", "physics", "data-analysis"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "splotrs"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+ganesh = "0.28.1"
+pyo3 = { version = "0.29.0", features = ["extension-module", "experimental-inspect"] }
+numpy = "0.29.0"
+thiserror = "2.0.18"
