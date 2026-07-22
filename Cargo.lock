@@ -597,7 +597,7 @@ checksum = "02ef091d4e8b981dbaa4cc17789d00b53d5d2c001ae689f14e6093f30c529036"
 
 [[package]]
 name = "splotrs"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ganesh",
  "numpy",
