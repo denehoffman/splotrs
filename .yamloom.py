@@ -29,6 +29,7 @@ build_jobs = MaturinBuildSuite(
     condition=build_condition,
     sccache=~context.github.ref.startswith('refs/tags/'),
     minimum_python='3.10',
+    args=('--release', '--out', 'dist', '--generate-stubs'),
 ).jobs()
 
 release_workflow = Workflow(
