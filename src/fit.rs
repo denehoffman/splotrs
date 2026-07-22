@@ -111,7 +111,7 @@ pub struct SPlotConfig {
     ///
     /// The vector must contain one nonnegative value per PDF and have a
     /// positive sum. When omitted, all components receive equal initial yields
-    /// whose sum equals the number of events.
+    /// whose sum equals the sum of the event weights.
     pub initial_yields: Option<Vec<f64>>,
 
     /// Optional signed weight for each input event.
@@ -498,10 +498,10 @@ fn validate_inputs(
         }
     }
 
-    let mut initial_yields = config
-        .initial_yields
-        .clone()
-        .unwrap_or_else(|| vec![data.len() as f64 / pdfs.len() as f64; pdfs.len()]);
+    let mut initial_yields = config.initial_yields.clone().unwrap_or_else(|| {
+        let total_weight = event_weights.iter().sum::<f64>();
+        vec![total_weight / pdfs.len() as f64; pdfs.len()]
+    });
 
     if initial_yields.len() != pdfs.len()
         || initial_yields
@@ -748,6 +748,21 @@ mod tests {
                 .iter()
                 .all(|weights| (weights[0] - 1.0).abs() < 1e-8)
         );
+    }
+
+    #[test]
+    fn default_initial_yields_sum_to_event_weight_sum() {
+        let data = vec![vec![-1.0], vec![0.0], vec![1.0]];
+        let first = gaussian(-1.0, 1.0);
+        let second = gaussian(1.0, 1.0);
+        let config = SPlotConfig {
+            event_weights: Some(vec![0.5, 1.0, 2.0]),
+            ..SPlotConfig::default()
+        };
+
+        let (initial_yields, _) = validate_inputs(&data, &[&first, &second], &[], &config).unwrap();
+
+        assert_eq!(initial_yields, vec![1.75, 1.75]);
     }
 
     #[test]

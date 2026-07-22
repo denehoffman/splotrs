@@ -382,7 +382,7 @@ pub mod splotrs {
     /// initial_yields : list of float or None, optional
     ///     Initial component yields. The list must contain one finite,
     ///     nonnegative value per PDF and have a positive sum. When omitted, equal
-    ///     yields summing to ``n_events`` are used.
+    ///     yields summing to the event-weight sum are used.
     /// weights : array_like or None, optional
     ///     Signed event weights with shape ``(n_events,)``. These weights enter the
     ///     likelihood, yield information matrix, and final sWeights. Unit weights
