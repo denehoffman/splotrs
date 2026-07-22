@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/denehoffman/splotrs/compare/splotrs-v0.1.2...splotrs-v0.1.3) (2026-07-22)
+
+
+### Bug Fixes
+
+* Initialize yields from event weight sum ([4f776f1](https://github.com/denehoffman/splotrs/commit/4f776f1c318c814b9ef9f2ba8630c11c58aee6ea))
+
 ## [0.1.2](https://github.com/denehoffman/splotrs/compare/splotrs-v0.1.1...splotrs-v0.1.2) (2026-07-22)
 
 
