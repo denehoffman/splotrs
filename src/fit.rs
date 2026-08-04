@@ -27,6 +27,22 @@ pub trait ParametricPdf: Send + Sync {
         event: &[f64],
         shape_parameters: &ShapeParameters,
     ) -> Result<f64, SPlotError>;
+
+    /// Evaluates the PDF for a batch of events.
+    ///
+    /// The default implementation preserves scalar PDF implementations. Native
+    /// and language-binding adapters should override this method when they can
+    /// evaluate a complete batch without per-event synchronization or FFI.
+    fn evaluate_batch(
+        &self,
+        events: &[Vec<f64>],
+        shape_parameters: &ShapeParameters,
+    ) -> Result<Vec<f64>, SPlotError> {
+        events
+            .iter()
+            .map(|event| self.evaluate(event, shape_parameters))
+            .collect()
+    }
 }
 
 impl<F> ParametricPdf for F
@@ -260,28 +276,10 @@ impl JointLikelihood<'_> {
 
     fn evaluate_model(&self, shape_parameters: &[f64]) -> Result<EvaluatedModel, SPlotError> {
         let shape_parameters = self.named_shape_parameters(shape_parameters);
+        let component_values = self.evaluate_pdf_values(&shape_parameters)?;
         let mut pdf_values = Vec::with_capacity(self.data.len() * self.n_components);
-
-        for (event_index, event) in self.data.iter().enumerate() {
-            let start = pdf_values.len();
-
-            for (component, pdf) in self.pdfs.iter().enumerate() {
-                let value = pdf.evaluate(event, &shape_parameters)?;
-
-                if !value.is_finite() || value < 0.0 {
-                    return Err(SPlotError::PdfEvaluation(format!(
-                        "PDF {component} returned an invalid value for event {event_index}"
-                    )));
-                }
-
-                pdf_values.push(value);
-            }
-
-            if pdf_values[start..].iter().all(|value| *value == 0.0) {
-                return Err(SPlotError::PdfEvaluation(format!(
-                    "all PDFs are zero for event {event_index}"
-                )));
-            }
+        for event in 0..self.data.len() {
+            pdf_values.extend(component_values.iter().map(|values| values[event]));
         }
 
         Ok(EvaluatedModel {
@@ -291,39 +289,57 @@ impl JointLikelihood<'_> {
             n_components: self.n_components,
         })
     }
+
+    fn evaluate_pdf_values(
+        &self,
+        shape_parameters: &ShapeParameters,
+    ) -> Result<Vec<Vec<f64>>, SPlotError> {
+        let mut component_values = Vec::with_capacity(self.n_components);
+        for (component, pdf) in self.pdfs.iter().enumerate() {
+            let values = pdf.evaluate_batch(self.data, shape_parameters)?;
+            if values.len() != self.data.len() {
+                return Err(SPlotError::PdfEvaluation(format!(
+                    "PDF {component} returned {} values, expected {}",
+                    values.len(),
+                    self.data.len()
+                )));
+            }
+            for (event, value) in values.iter().enumerate() {
+                if !value.is_finite() || *value < 0.0 {
+                    return Err(SPlotError::PdfEvaluation(format!(
+                        "PDF {component} returned an invalid value for event {event}"
+                    )));
+                }
+            }
+            component_values.push(values);
+        }
+        for event in 0..self.data.len() {
+            if component_values.iter().all(|values| values[event] == 0.0) {
+                return Err(SPlotError::PdfEvaluation(format!(
+                    "all PDFs are zero for event {event}"
+                )));
+            }
+        }
+        Ok(component_values)
+    }
 }
 
 impl CostFunction<f64, ganesh::NalgebraProvider, (), SPlotError> for JointLikelihood<'_> {
     fn evaluate(&self, parameters: &Vector<f64>, _: &()) -> Result<f64, SPlotError> {
         let parameter_values = parameters.to_vec();
         let shape_parameters = self.named_shape_parameters(&parameter_values[self.n_components..]);
+        let component_values = self.evaluate_pdf_values(&shape_parameters)?;
 
         let mut nll: f64 = (0..self.n_components)
             .map(|component| parameters.get(component))
             .sum();
 
-        for (event_index, event) in self.data.iter().enumerate() {
-            let mut denominator = 0.0;
-            let mut has_nonzero_pdf = false;
-
-            for (component, pdf) in self.pdfs.iter().enumerate() {
-                let value = pdf.evaluate(event, &shape_parameters)?;
-
-                if !value.is_finite() || value < 0.0 {
-                    return Err(SPlotError::PdfEvaluation(format!(
-                        "PDF {component} returned an invalid value for event {event_index}"
-                    )));
-                }
-
-                has_nonzero_pdf |= value > 0.0;
-                denominator += parameters.get(component) * value;
-            }
-
-            if !has_nonzero_pdf {
-                return Err(SPlotError::PdfEvaluation(format!(
-                    "all PDFs are zero for event {event_index}"
-                )));
-            }
+        for event_index in 0..self.data.len() {
+            let denominator: f64 = component_values
+                .iter()
+                .enumerate()
+                .map(|(component, values)| parameters.get(component) * values[event_index])
+                .sum();
 
             if !denominator.is_finite() {
                 return Err(SPlotError::Optimization(format!(
@@ -721,6 +737,7 @@ pub fn splot(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn gaussian(mean: f64, sigma: f64) -> impl ParametricPdf {
         move |event: &[f64], _parameters: &ShapeParameters| {
@@ -728,6 +745,42 @@ mod tests {
 
             (-0.5 * z * z).exp() / (sigma * std::f64::consts::TAU.sqrt())
         }
+    }
+
+    struct BatchOnlyPdf {
+        batches: AtomicUsize,
+    }
+
+    impl ParametricPdf for BatchOnlyPdf {
+        fn evaluate(
+            &self,
+            _event: &[f64],
+            _shape_parameters: &ShapeParameters,
+        ) -> Result<f64, SPlotError> {
+            panic!("scalar evaluation should not be used")
+        }
+
+        fn evaluate_batch(
+            &self,
+            events: &[Vec<f64>],
+            _shape_parameters: &ShapeParameters,
+        ) -> Result<Vec<f64>, SPlotError> {
+            self.batches.fetch_add(1, Ordering::Relaxed);
+            Ok(vec![1.0; events.len()])
+        }
+    }
+
+    #[test]
+    fn joint_likelihood_uses_batch_pdf_evaluation() {
+        let data = vec![vec![-1.0], vec![0.0], vec![1.0]];
+        let pdf = BatchOnlyPdf {
+            batches: AtomicUsize::new(0),
+        };
+
+        let result = splot(&data, &[&pdf], &[], SPlotConfig::default()).unwrap();
+
+        assert!(result.success);
+        assert!(pdf.batches.load(Ordering::Relaxed) > 0);
     }
 
     #[test]

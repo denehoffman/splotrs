@@ -305,6 +305,54 @@ pub mod splotrs {
                     ))
                 })
         }
+
+        fn evaluate_batch(
+            &self,
+            _events: &[Vec<f64>],
+            shape_parameters: &ShapeParameters,
+        ) -> Result<Vec<f64>, RustSPlotError> {
+            let mut cache = self.cache.lock().map_err(|_| {
+                RustSPlotError::PdfEvaluation("Python PDF cache lock was poisoned".into())
+            })?;
+            let needs_evaluation = cache
+                .as_ref()
+                .is_none_or(|cached| cached.parameters != *shape_parameters);
+            if needs_evaluation {
+                let values = Python::attach(|py| -> Result<Vec<f64>, RustSPlotError> {
+                    let parameters = parameters_to_python(py, shape_parameters)
+                        .map_err(|error| RustSPlotError::PdfEvaluation(error.to_string()))?;
+                    let output = self
+                        .callable
+                        .bind(py)
+                        .call1((self.data.bind(py), parameters))
+                        .map_err(|error| RustSPlotError::PdfEvaluation(error.to_string()))?;
+                    let array = output.cast::<PyArray1<f64>>().map_err(|_| {
+                        RustSPlotError::PdfEvaluation(format!(
+                            "PDF {} must return a one-dimensional float64 NumPy array",
+                            self.component
+                        ))
+                    })?;
+                    let readonly: PyReadonlyArray1<'_, f64> = array.readonly();
+                    if readonly.len() != self.n_events {
+                        return Err(RustSPlotError::PdfEvaluation(format!(
+                            "PDF {} returned {} values, expected {}",
+                            self.component,
+                            readonly.len(),
+                            self.n_events
+                        )));
+                    }
+                    Ok(readonly.as_array().to_vec())
+                })?;
+                *cache = Some(CachedEvaluation {
+                    parameters: shape_parameters.clone(),
+                    values,
+                });
+            }
+            cache
+                .as_ref()
+                .map(|cached| cached.values.clone())
+                .ok_or_else(|| RustSPlotError::PdfEvaluation("Python PDF cache is empty".into()))
+        }
     }
 
     fn matrix_to_numpy<'py>(

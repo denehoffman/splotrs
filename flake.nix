@@ -19,7 +19,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          default = pkgs.mkShell {
+          default = pkgs.mkShell ({
             packages = with pkgs; [
               cargo
               clippy
@@ -30,12 +30,21 @@
               uv
             ];
 
+            UV_PROJECT_ENVIRONMENT = ".venv";
+            UV_PYTHON = "${pkgs.python3}/bin/python";
             UV_PYTHON_DOWNLOADS = "never";
 
             shellHook = ''
+              unset PYTHONHOME PYTHONPATH
               uv sync --frozen
+              source "$UV_PROJECT_ENVIRONMENT/bin/activate"
             '';
-          };
+          } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+              pkgs.stdenv.cc.cc.lib
+              pkgs.zlib
+            ];
+          });
         });
     };
 }
