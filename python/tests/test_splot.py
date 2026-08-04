@@ -2,8 +2,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-
-from splotrs import SPlotError, SPlotResult, ShapeParameter, splot
+from splotrs import ShapeParameter, SPlotError, SPlotResult, splot
 
 
 def normal(mean: float, sigma: float):

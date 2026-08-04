@@ -1,11 +1,3 @@
-from yamloom.actions.github.artifacts import DownloadArtifact
-from yamloom.actions.github.release import ReleasePlease
-from yamloom.actions.github.scm import Checkout
-from yamloom.actions.toolchains.python import SetupUV
-from yamloom.actions.toolchains.rust import SetupRust
-from yamloom.expressions import context
-from yamloom.workflows import MaturinBuildSuite
-
 from yamloom import (
     Environment,
     Events,
@@ -18,6 +10,13 @@ from yamloom import (
     script,
     sync,
 )
+from yamloom.actions.github.artifacts import DownloadArtifact
+from yamloom.actions.github.release import ReleasePlease
+from yamloom.actions.github.scm import Checkout
+from yamloom.actions.toolchains.python import SetupUV
+from yamloom.actions.toolchains.rust import SetupRust
+from yamloom.expressions import context
+from yamloom.workflows import MaturinBuildSuite
 
 build_condition = context.github.ref.startswith('refs/tags/') | (
     context.github.event_name == 'workflow_dispatch'
@@ -69,7 +68,7 @@ release_workflow = Workflow(
                 SetupUV(),
                 script(
                     'uv publish --trusted-publishing always wheels-*/*',
-                    permissions=Permissions(id_token='write', contents='write'),  # noqa: S106
+                    permissions=Permissions(id_token='write', contents='write'),
                 ),
             ],
             condition=build_condition,
