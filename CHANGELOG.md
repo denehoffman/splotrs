@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.4](https://github.com/denehoffman/splotrs/compare/splotrs-v0.1.3...splotrs-v0.1.4) (2026-08-04)
+
+
+### Bug Fixes
+
+* Bump for release ([86ae452](https://github.com/denehoffman/splotrs/commit/86ae452881f9a88d4be953964b01004376b55297))
+
+
+### Performance Improvements
+
+* Use batched evaluations to make splotrs faster (around 2x in my use cases) ([92de962](https://github.com/denehoffman/splotrs/commit/92de962f1e82a195453c89a956ceaec7216568f7))
+
 ## [0.1.3](https://github.com/denehoffman/splotrs/compare/splotrs-v0.1.2...splotrs-v0.1.3) (2026-07-22)
 
 
