@@ -32,6 +32,15 @@ def test_one_component_result_and_vectorized_callback():
     assert result.objective_evaluations > 0
 
 
+def test_float32_inputs_are_converted_to_float64():
+    data = np.array([[-1.0], [0.0], [1.0]], dtype=np.float32)
+    weights = np.array([1.0, 2.0, 1.0], dtype=np.float32)
+
+    result = splot(data, [normal(0.0, 1.0)], weights=weights)
+
+    np.testing.assert_allclose(result.yields, [weights.sum()], atol=1e-6)
+
+
 def test_pdf_exception_is_preserved():
     data = np.ones((2, 1), dtype=np.float64)
 

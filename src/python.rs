@@ -7,12 +7,13 @@ pub mod splotrs {
         ParametricPdf, SPlotConfig, SPlotError as RustSPlotError, SPlotResult, ShapeParameter,
         ShapeParameters, splot as fit_splot,
     };
-    use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyUntypedArrayMethods};
+    use numpy::{
+        AllowTypeChange, PyArray1, PyArray2, PyArrayLike1, PyArrayLike2, PyArrayMethods,
+        PyReadonlyArray1, PyUntypedArrayMethods,
+    };
     use pyo3::exceptions::{PyRuntimeError, PyValueError};
-    use pyo3::inspect::PyStaticExpr;
     use pyo3::prelude::*;
     use pyo3::types::{PyAny, PyDict};
-    use pyo3::{Borrowed, type_hint_identifier, type_hint_subscript};
     use std::sync::Mutex;
 
     pyo3::create_exception!(splotrs, SPlotError, PyRuntimeError);
@@ -180,67 +181,6 @@ pub mod splotrs {
     struct CachedEvaluation {
         parameters: ShapeParameters,
         values: Vec<f64>,
-    }
-
-    struct PythonPdf(Py<PyAny>);
-
-    struct PythonArray1(Py<PyArray1<f64>>);
-
-    struct PythonArray2(Py<PyArray2<f64>>);
-
-    impl FromPyObject<'_, '_> for PythonArray1 {
-        type Error = PyErr;
-
-        const INPUT_TYPE: PyStaticExpr = type_hint_subscript!(
-            type_hint_identifier!("numpy.typing", "NDArray"),
-            type_hint_identifier!("numpy", "float64")
-        );
-
-        fn extract(object: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
-            Ok(Self(object.cast::<PyArray1<f64>>()?.to_owned().unbind()))
-        }
-    }
-
-    impl FromPyObject<'_, '_> for PythonArray2 {
-        type Error = PyErr;
-
-        const INPUT_TYPE: PyStaticExpr = type_hint_subscript!(
-            type_hint_identifier!("numpy.typing", "NDArray"),
-            type_hint_identifier!("numpy", "float64")
-        );
-
-        fn extract(object: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
-            Ok(Self(object.cast::<PyArray2<f64>>()?.to_owned().unbind()))
-        }
-    }
-
-    impl FromPyObject<'_, '_> for PythonPdf {
-        type Error = PyErr;
-
-        const INPUT_TYPE: PyStaticExpr = type_hint_subscript!(
-            type_hint_identifier!("collections.abc", "Callable"),
-            PyStaticExpr::List {
-                elts: &[
-                    type_hint_subscript!(
-                        type_hint_identifier!("numpy.typing", "NDArray"),
-                        type_hint_identifier!("numpy", "float64")
-                    ),
-                    type_hint_subscript!(
-                        type_hint_identifier!("builtins", "dict"),
-                        type_hint_identifier!("builtins", "str"),
-                        type_hint_identifier!("builtins", "float")
-                    )
-                ]
-            },
-            type_hint_subscript!(
-                type_hint_identifier!("numpy.typing", "NDArray"),
-                type_hint_identifier!("numpy", "float64")
-            )
-        );
-
-        fn extract(object: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
-            Ok(Self(object.to_owned().unbind()))
-        }
     }
 
     struct PythonParametricPdf {
@@ -470,29 +410,28 @@ pub mod splotrs {
     /// matrix indefinite or singular for some datasets.
     #[pyfunction(name = "splot")]
     #[pyo3(signature = (
-        data,
-        pdfs,
+        data: "numpy.typing.ArrayLike",
+        pdfs: "list[collections.abc.Callable[[numpy.typing.NDArray[numpy.float64], dict[str, float]], numpy.typing.NDArray[numpy.float64]]]",
         *,
         shape_parameters: "list[ShapeParameter] | None" = None,
         initial_yields: "list[float] | None" = None,
-        weights = None,
+        weights: "numpy.typing.ArrayLike | None" = None,
         max_steps: "int | None" = Some(1000),
         tolerance: "float" = 1e-8
     ) -> "SPlotResult")]
     #[allow(clippy::too_many_arguments)]
     fn splot(
         py: Python<'_>,
-        data: PythonArray2,
-        pdfs: Vec<PythonPdf>,
+        data: PyArrayLike2<'_, f64, AllowTypeChange>,
+        pdfs: Vec<Py<PyAny>>,
         shape_parameters: Option<Vec<Py<PyShapeParameter>>>,
         initial_yields: Option<Vec<f64>>,
-        weights: Option<PythonArray1>,
+        weights: Option<PyArrayLike1<'_, f64, AllowTypeChange>>,
         max_steps: Option<usize>,
         tolerance: f64,
     ) -> PyResult<PySPlotResult> {
-        let data = data.0.bind(py);
-        let data_view = data.readonly();
-        let shape = data_view.shape();
+        let data_array: &Bound<'_, PyArray2<f64>> = &data;
+        let shape = data.shape();
         if shape[0] == 0 || shape[1] == 0 {
             return Err(PyValueError::new_err(
                 "data must have shape (n_events, n_features) with both dimensions nonzero",
@@ -504,9 +443,7 @@ pub mod splotrs {
 
         let config = SPlotConfig {
             initial_yields,
-            event_weights: weights
-                .map(|weights| weights.0.bind(py).to_vec())
-                .transpose()?,
+            event_weights: weights.map(|weights| weights.to_vec()).transpose()?,
             max_steps,
             tolerance,
         };
@@ -515,7 +452,7 @@ pub mod splotrs {
             .iter()
             .map(|parameter| ShapeParameter::try_from(&*parameter.bind(py).borrow()))
             .collect::<Result<_, _>>()?;
-        let indexed_rows: Vec<Vec<f64>> = data_view
+        let indexed_rows: Vec<Vec<f64>> = data
             .as_array()
             .rows()
             .into_iter()
@@ -534,13 +471,13 @@ pub mod splotrs {
         let initial_parameters_python = parameters_to_python(py, &initial_parameters)?;
         let mut initial_values = Vec::with_capacity(pdfs.len());
         for (index, pdf) in pdfs.iter().enumerate() {
-            let pdf = pdf.0.bind(py);
+            let pdf = pdf.bind(py);
             if !pdf.is_callable() {
                 return Err(PyValueError::new_err(format!(
                     "PDF {index} must be callable"
                 )));
             }
-            let output = pdf.call1((data, initial_parameters_python.clone()))?;
+            let output = pdf.call1((data_array.clone(), initial_parameters_python.clone()))?;
             let array = output.cast::<PyArray1<f64>>().map_err(|_| {
                 PyValueError::new_err(format!(
                     "PDF {index} must return a one-dimensional float64 NumPy array"
@@ -561,8 +498,8 @@ pub mod splotrs {
             .zip(initial_values)
             .enumerate()
             .map(|(component, (callable, values))| PythonParametricPdf {
-                callable: callable.0.clone_ref(py),
-                data: data.clone().unbind(),
+                callable: callable.clone_ref(py),
+                data: data_array.clone().unbind(),
                 component,
                 n_events: shape[0],
                 cache: Mutex::new(Some(CachedEvaluation {
