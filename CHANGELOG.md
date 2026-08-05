@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/denehoffman/splotrs/compare/splotrs-v0.1.4...splotrs-v0.1.5) (2026-08-05)
+
+
+### Bug Fixes
+
+* Simplify type hinting and allow for f32 array inputs ([af7cf34](https://github.com/denehoffman/splotrs/commit/af7cf34d4b0e4181028363b0ca3f0ddd0b1094c2))
+
 ## [0.1.4](https://github.com/denehoffman/splotrs/compare/splotrs-v0.1.3...splotrs-v0.1.4) (2026-08-04)
 
 
